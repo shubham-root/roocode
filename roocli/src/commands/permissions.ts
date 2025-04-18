@@ -1,6 +1,5 @@
 import chalk from "chalk"
 import { Command } from "commander"
-import { WebSocketClient } from "../../../comms-clients/websocket-client"
 import { displayBox } from "../utils/display"
 import {
 	ToolPermissionSettings,
@@ -8,6 +7,7 @@ import {
 	updateToolPermissionSettings,
 } from "../utils/settings-storage"
 import { ToolCategory, getToolsInCategory } from "../utils/tool-categories"
+import { WebSocketClient } from "../utils/websocket-client"
 
 /**
  * Create the permissions command

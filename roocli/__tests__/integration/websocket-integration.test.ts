@@ -2,8 +2,8 @@ import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 import WebSocket from "ws"
-import { WebSocketClient } from "../../../comms-clients/websocket-client"
 import { readWebSocketConfig } from "../../../comms-clients/websocket-config"
+import { WebSocketClient } from ".././utils/websocket-client"
 
 // Mock dependencies
 jest.mock("fs/promises")
@@ -22,7 +22,7 @@ jest.mock("ora", () => {
 })
 
 // Add a type declaration to extend WebSocketClient for testing
-declare module "../../../comms-clients/websocket-client" {
+declare module ".././utils/websocket-client" {
 	interface WebSocketClient {
 		// For testing purposes only
 		messageHandler?: (data: string) => void
