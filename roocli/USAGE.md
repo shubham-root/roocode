@@ -54,32 +54,30 @@ roo list configs
 
 The RooCode CLI uses a consistent command structure with four main commands:
 
-- `list`: Display information about configurations, profiles, and tasks
-- `create`: Create new configurations, profiles, and tasks
-- `update`: Update existing configurations, profiles, and tasks
-- `delete`: Delete configurations, profiles, and tasks
+- `list`: Display information about profiles and tasks
+- `create`: Create new profiles and tasks
+- `update`: Update existing profiles and tasks
+- `delete`: Delete profiles and tasks
+- `set`: Set new configurations (legacy, prefer using profile commands)
 
-Each command applies to three object types: configs, profiles, and tasks.
+Each command applies to two main object types: profiles and tasks. Configurations are managed through profile commands.
 
 ### List Command
 
 The `list` command retrieves information from RooCode:
 
 ```bash
-# List all configurations (concise view)
-roo list configs
-
-# List all configurations (detailed view)
-roo list configs --verbose
-
-# List all configurations (concise view with ability to expand individual configurations)
-roo list configs --expandable
-
 # List all profiles
 roo list profiles
 
+# List all profiles with detailed information
+roo list profiles --verbose
+
 # List only the active profile
 roo list profiles --active
+
+# List active profile with detailed information
+roo list profiles --active --verbose
 
 # List all tasks
 roo list tasks
@@ -89,11 +87,40 @@ roo list tasks
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Configurations                          │
+│                            Profiles                             │
 ├─────────────────────────────────────────────────────────────────┤
-│ default: openai                                                 │
-│ gpt4: openai                                                    │
-│ claude: anthropic                                               │
+│ default                                                         │
+│ gpt4                                                            │
+│ claude                                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+With verbose option:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                            Profiles                             │
+├─────────────────────────────────────────────────────────────────┤
+│ [                                                               │
+│   {                                                             │
+│     "name": "default",                                          │
+│     "provider": "openai",                                       │
+│     "id": "config-123",                                         │
+│     "isActive": true                                            │
+│   },                                                            │
+│   {                                                             │
+│     "name": "gpt4",                                             │
+│     "provider": "openai",                                       │
+│     "id": "config-456",                                         │
+│     "isActive": false                                           │
+│   },                                                            │
+│   {                                                             │
+│     "name": "claude",                                           │
+│     "provider": "anthropic",                                    │
+│     "id": "config-789",                                         │
+│     "isActive": false                                           │
+│   }                                                             │
+│ ]                                                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -102,11 +129,14 @@ roo list tasks
 The `create` command creates new objects:
 
 ```bash
-# Create a new configuration from JSON
-roo create config --json '{"apiProvider": "openai", "openAiModelId": "gpt-4", "openAiApiKey": "sk-your-key"}'
+# Create a new profile with configuration
+roo create profile --name "GPT-4" --provider openai --apikey "sk-your-key" --model "gpt-4"
 
-# Create a new profile
-roo create profile --name "GPT-4" --config "default"
+# Create a new profile with OpenRouter configuration and permissions
+roo create profile --name "Claude" --provider openrouter --apikey "your-api-key" --model "anthropic/claude-3.7-sonnet" --allow-execute true --allow-browser true
+
+# Create a secure profile with all permissions disabled
+roo create profile --name "Secure-Profile" --provider openrouter --apikey "your-api-key" --secure
 
 # Create a new task
 roo create task --mode "code" --message "Create a React component"
@@ -114,23 +144,31 @@ roo create task --mode "code" --message "Create a React component"
 
 ### Set Command
 
-The `set` command adds new configurations:
+The `set` command adds new configurations (legacy approach):
 
 ```bash
-# Set a new configuration from JSON
+# Set a new configuration from JSON (use create profile instead for new configurations)
 roo set config --json '{"apiProvider": "openai", "openAiModelId": "gpt-4", "openAiApiKey": "sk-your-key"}'
 
 # Set a new configuration from a file
 roo set config --file path/to/config.json
 ```
 
+Note: For most use cases, it's recommended to use the `create profile` command instead of `set config` as it provides a more complete solution with profile creation and permission settings.
+
 ### Update Command
 
 The `update` command updates existing objects:
 
 ```bash
-# Update a configuration
-roo update config --name "default" --json '{"apiProvider": "openai", "openAiModelId": "gpt-4-turbo"}'
+# Update a profile with new configuration
+roo update profile --name "GPT-4" --provider openai --model "gpt-4-turbo"
+
+# Update a profile with new permissions
+roo update profile --name "GPT-4" --allow-execute false --allow-browser false
+
+# Set a profile as active
+roo update profile --name "GPT-4" --active
 
 # Send a message to the current task
 roo update task --message "Add a button to the component"
@@ -144,17 +182,17 @@ roo update task --interact primary
 
 ### Profile Command
 
-The `profile` command manages profiles:
+Note: The standalone profile command has been deprecated. Use the create, update, and delete commands with the profile subcommand instead.
 
 ```bash
-# Create a new profile
-roo profile create --name "GPT-4" --config "default"
+# Create a new profile (use this instead)
+roo create profile --name "GPT-4" --provider openai --apikey "your-api-key" --model "gpt-4"
 
-# Set a profile as active
-roo profile --name "GPT-4" --active
+# Set a profile as active (use this instead)
+roo update profile --name "GPT-4" --active
 
-# Delete a profile
-roo profile delete --name "GPT-4"
+# Delete a profile (use this instead)
+roo delete profile --name "GPT-4"
 ```
 
 ### Delete Command
@@ -162,14 +200,11 @@ roo profile delete --name "GPT-4"
 The `delete` command removes objects:
 
 ```bash
-# Delete a configuration
-roo delete config --name "old-config"
-
-# Delete a configuration without confirmation
-roo delete config --name "old-config" --force
-
 # Delete a profile
 roo delete profile --name "GPT-4"
+
+# Delete a profile without confirmation
+roo delete profile --name "GPT-4" --force
 
 # Delete a task
 roo delete task --id "task-123"
@@ -180,14 +215,8 @@ roo delete task --id "task-123"
 ### Setting Up a New Profile and Starting a Task
 
 ```bash
-# Create a new configuration
-roo create config --json '{"apiProvider": "openai", "openAiModelId": "gpt-4"}'
-
-# Create a new profile with this configuration
-roo create profile --name "My Project" --config "default"
-
-# Set it as active
-roo update profile --name "My Project" --active
+# Create a new profile with configuration and set it as active
+roo create profile --name "My Project" --provider openai --apikey "your-api-key" --model "gpt-4" --active
 
 # Start a new task
 roo create task --mode "code" --message "Create a React component that fetches data from an API"
@@ -217,6 +246,21 @@ roo update profile --name "Project B" --active
 
 # Start a new task for this project
 roo create task --mode "code" --message "Update the database schema"
+```
+
+### Managing Permissions
+
+```bash
+# Create a secure profile with all permissions disabled
+roo create profile --name "Secure-Profile" --provider openrouter --apikey "your-api-key" --secure
+
+# Create a profile with specific permissions
+roo create profile --name "Custom-Permissions" --provider openai --apikey "your-api-key" --model "gpt-4" \
+  --allow-read true --allow-write true --allow-execute false --allow-browser false \
+  --allow-mcp true --allow-mode-switch true --allow-subtasks false
+
+# Update permissions for an existing profile
+roo update profile --name "My-Profile" --allow-execute false --allow-browser false
 ```
 
 ## Tips and Best Practices

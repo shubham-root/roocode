@@ -10,44 +10,11 @@ import { WebSocketClient } from "../utils/websocket-client"
  */
 export function deleteCommand(wsClient: WebSocketClient): Command {
 	const command = new Command("delete")
-		.description("Delete a configuration, profile, or task")
-		.addCommand(deleteConfigCommand(wsClient))
+		.description("Delete a profile or task")
 		.addCommand(deleteProfileCommand(wsClient))
 		.addCommand(deleteTaskCommand(wsClient))
 
 	return command
-}
-
-/**
- * Create the delete config command
- * @param wsClient The WebSocket client
- * @returns The delete config command
- */
-function deleteConfigCommand(wsClient: WebSocketClient): Command {
-	return new Command("config")
-		.description("Delete a configuration")
-		.requiredOption("--name <name>", "Configuration name")
-		.option("-f, --force", "Force deletion without confirmation")
-		.action(async (options) => {
-			try {
-				let shouldDelete = options.force
-
-				if (!shouldDelete) {
-					shouldDelete = await displayConfirmation(
-						`Are you sure you want to delete configuration "${options.name}"?`,
-					)
-				}
-
-				if (shouldDelete) {
-					await wsClient.sendCommand("deleteConfiguration", { name: options.name })
-					displayBox("Configuration Deleted", `Configuration "${options.name}" has been deleted`, "success")
-				} else {
-					console.log(chalk.yellow("Configuration deletion cancelled"))
-				}
-			} catch (error) {
-				console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
-			}
-		})
 }
 
 /**

@@ -3,7 +3,6 @@ import { Command } from "commander"
 import { displayBox, displayFollowupQuestion, displayTextInput } from "../utils/display"
 import { getLastFollowupQuestion } from "../utils/followup-store"
 import { WebSocketClient } from "../utils/websocket-client"
-import { updatePermissionsCommand } from "./permissions"
 import { updateProfileCommand } from "./profile"
 import { setupTaskEventListeners, waitForTaskCompletion } from "./task"
 
@@ -14,53 +13,11 @@ import { setupTaskEventListeners, waitForTaskCompletion } from "./task"
  */
 export function updateCommand(wsClient: WebSocketClient): Command {
 	const command = new Command("update")
-		.description("Update a configuration, profile, task, or permissions")
-		.addCommand(updateConfigCommand(wsClient))
+		.description("Update a profile or task")
 		.addCommand(updateProfileCommand(wsClient))
 		.addCommand(updateTaskCommand(wsClient))
-		.addCommand(updatePermissionsCommand(wsClient))
 
 	return command
-}
-
-/**
- * Create the update config command
- * @param wsClient The WebSocket client
- * @returns The update config command
- */
-function updateConfigCommand(wsClient: WebSocketClient): Command {
-	return new Command("config")
-		.description("Update an existing configuration")
-		.requiredOption("--name <name>", "Configuration name")
-		.option("--json <json>", "JSON configuration string")
-		.option("--file <file>", "Path to JSON configuration file")
-		.action(async (options) => {
-			try {
-				let config
-
-				if (options.json) {
-					try {
-						config = JSON.parse(options.json)
-					} catch (error) {
-						throw new Error("Invalid JSON format")
-					}
-				} else if (options.file) {
-					// Implementation for reading from file would go here
-					throw new Error("File reading not implemented yet")
-				} else {
-					throw new Error("Either --json or --file option is required")
-				}
-
-				const result = await wsClient.sendCommand("updateConfiguration", { name: options.name, config })
-				displayBox(
-					"Configuration Updated",
-					`Configuration "${options.name}" has been successfully updated`,
-					"success",
-				)
-			} catch (error) {
-				console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
-			}
-		})
 }
 
 /**
