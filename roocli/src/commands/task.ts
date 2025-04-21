@@ -567,6 +567,7 @@ export async function waitForTaskCompletion(
 
 		let timeoutId: NodeJS.Timeout
 		let activityCheckId: NodeJS.Timeout
+		let shouldAutoExit = false
 
 		// Set up a listener for the taskFinished event
 		const finishListener = (id: string) => {
@@ -581,11 +582,49 @@ export async function waitForTaskCompletion(
 		// Listen for the taskFinished event
 		wsClient.on("taskFinished", finishListener)
 
+		// Check if the last message is an ask or attempt_completion type
+		const checkLastMessageType = async () => {
+			try {
+				// Get the messages for this task
+				const messages = await wsClient.sendCommand("getTaskMessages", { taskId })
+
+				if (Array.isArray(messages) && messages.length > 0) {
+					const lastMessage = messages[messages.length - 1]
+
+					// Check if the last message is an ask type or attempt_completion
+					if (lastMessage && lastMessage.type === "ask") {
+						if (lastMessage.ask === "followup" || lastMessage.ask === "completion_result") {
+							shouldAutoExit = true
+							clearTimeout(timeoutId)
+							clearInterval(activityCheckId)
+							wsClient.removeListener("taskFinished", finishListener)
+							wsClient.removeTaskEventListeners()
+							console.log(chalk.green("\nTask completed. Exiting automatically."))
+							resolve()
+							return true
+						}
+					}
+				}
+				return false
+			} catch (error) {
+				console.error(
+					chalk.red(
+						`Error checking last message type: ${error instanceof Error ? error.message : String(error)}`,
+					),
+				)
+				return false
+			}
+		}
+
 		// Set up an interval to check for activity
-		activityCheckId = setInterval(() => {
+		activityCheckId = setInterval(async () => {
 			// If there's been activity in the last 5 seconds, reset the timeout
 			if (wsClient.getTimeSinceLastActivity() < 5000) {
-				// Activity detected, reset the timeout
+				// Activity detected, check if we should auto-exit
+				const didAutoExit = await checkLastMessageType()
+				if (didAutoExit) return
+
+				// Reset the timeout
 				clearTimeout(timeoutId)
 
 				// Set up a new timeout
@@ -599,7 +638,11 @@ export async function waitForTaskCompletion(
 		}, 1000)
 
 		// Set up the initial timeout
-		timeoutId = setTimeout(() => {
+		timeoutId = setTimeout(async () => {
+			// Check if we should auto-exit based on the last message
+			const didAutoExit = await checkLastMessageType()
+			if (didAutoExit) return
+
 			clearInterval(activityCheckId)
 			wsClient.removeListener("taskFinished", finishListener)
 

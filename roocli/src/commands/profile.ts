@@ -1,7 +1,64 @@
 import chalk from "chalk"
 import { Command } from "commander"
-import { displayBox, displayConfirmation } from "../utils/display"
+import { displayConfirmation } from "../utils/display"
 import { WebSocketClient } from "../utils/websocket-client"
+
+/**
+ * Display profiles with provider information and highlight the active profile
+ * @param wsClient The WebSocket client
+ * @param profiles Array of profile names
+ * @param activeProfile The currently active profile name
+ * @param config Optional configuration object containing profile metadata
+ */
+async function displayProfilesWithProvider(
+	wsClient: WebSocketClient,
+	profiles: string[],
+	activeProfile: string,
+	config?: any,
+): Promise<void> {
+	// Create a map of profile names to their providers
+	const profileProviders = new Map<string, string>()
+
+	// If we have config with metadata, extract provider info
+	if (config && config.listApiConfigMeta && Array.isArray(config.listApiConfigMeta)) {
+		// First, check if the active profile is the current configuration
+		const isActiveProfileCurrentConfig = config.currentApiConfigName === activeProfile
+
+		// Store the actual provider from the main config
+		const actualProvider = config.apiProvider || "unknown"
+
+		for (const profile of config.listApiConfigMeta) {
+			if (profile.name) {
+				// For the active profile, always use the actual provider from the main config
+				if (profile.name === activeProfile) {
+					profileProviders.set(profile.name, actualProvider)
+				} else {
+					// For other profiles, use the provider from metadata
+					profileProviders.set(profile.name, profile.apiProvider || "unknown")
+				}
+			}
+		}
+	}
+
+	// Display each profile
+	for (const profileName of profiles) {
+		// Get provider from our map if available
+		const provider = profileProviders.get(profileName) || "unknown"
+
+		// Format the profile string
+		let displayText = profileName
+		if (profileProviders.has(profileName)) {
+			displayText = `name: ${profileName}; provider: ${provider}`
+		}
+
+		// If this is the active profile, make it green and bold
+		if (profileName === activeProfile) {
+			console.log(chalk.bold.green(`${displayText} (active)`))
+		} else {
+			console.log(displayText)
+		}
+	}
+}
 
 /**
  * Create the list profiles command
@@ -18,23 +75,30 @@ export function listProfilesCommand(wsClient: WebSocketClient): Command {
 				if (options.active) {
 					const activeProfile = await wsClient.sendCommand("getActiveProfile")
 					if (!activeProfile) {
-						displayBox("Active Profile", "No active profile", "info")
-						return
+						console.log(chalk.blue("\nActive Profile:"))
+						console.log("No active profile")
+						// Exit immediately after profile command
+						process.exit(0)
 					}
 
 					// Get the configuration for more details if verbose
 					if (options.verbose) {
 						const config = await wsClient.sendCommand("getConfiguration")
-						displayBox("Active Profile", JSON.stringify(config, null, 2), "info")
+						console.log(chalk.blue("\nActive Profile:"))
+						console.log(JSON.stringify(config, null, 2))
 					} else {
-						displayBox("Active Profile", activeProfile, "info")
+						console.log(chalk.blue("\nActive Profile:"))
+						console.log(activeProfile)
 					}
 				} else {
 					const profiles = await wsClient.sendCommand("getProfiles")
+					// Get the active profile for highlighting
+					const activeProfile = await wsClient.sendCommand("getActiveProfile")
+
+					// Get the full configuration once to extract provider information
+					const config = await wsClient.sendCommand("getConfiguration")
 
 					if (options.verbose) {
-						// Get the full configuration for more details
-						const config = await wsClient.sendCommand("getConfiguration")
 						if (config && config.listApiConfigMeta) {
 							const configList = config.listApiConfigMeta
 							const formattedProfiles = configList.map((profile: any) => {
@@ -45,16 +109,24 @@ export function listProfilesCommand(wsClient: WebSocketClient): Command {
 									isActive: profile.name === config.currentApiConfigName,
 								}
 							})
-							displayBox("Profiles", JSON.stringify(formattedProfiles, null, 2), "info")
+							console.log(chalk.blue("\nProfiles:"))
+							console.log(JSON.stringify(formattedProfiles, null, 2))
 						} else {
-							displayBox("Profiles", profiles.join("\n"), "info")
+							// Display profiles with provider information
+							console.log(chalk.blue("\nProfiles:"))
+							await displayProfilesWithProvider(wsClient, profiles, activeProfile, config)
 						}
 					} else {
-						displayBox("Profiles", profiles.join("\n"), "info")
+						// Display profiles with provider information
+						console.log(chalk.blue("\nProfiles:"))
+						await displayProfilesWithProvider(wsClient, profiles, activeProfile, config)
 					}
 				}
+				// Exit immediately after profile command
+				process.exit(0)
 			} catch (error) {
 				console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
+				process.exit(1)
 			}
 		})
 }
@@ -74,6 +146,7 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 			.option("--provider <provider>", "Provider name (e.g., 'openrouter')")
 			.option("--model <model>", "Model ID (e.g., 'anthropic/claude-3.7-sonnet')")
 			.option("--apikey <apikey>", "API key for the provider")
+			.option("--base-url <url>", "Base URL for API (required for openai-compat)")
 			.option("--active", "Set the profile as active after creation")
 			// Permission options
 			.option("--auto-approval <boolean>", "Enable or disable auto-approval for all tools", "true")
@@ -126,6 +199,105 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 										outputPrice: 15.0,
 										cacheWritesPrice: 3.75,
 										cacheReadsPrice: 0.3,
+									},
+								}
+								break
+							}
+							case "anthropic": {
+								const modelId = options.model || "claude-3.7-sonnet"
+								const baseUrl = options.baseUrl
+								config = {
+									apiProvider: "anthropic",
+									apiKey: options.apikey,
+									apiModelId: modelId,
+									...(baseUrl && { anthropicBaseUrl: baseUrl }),
+								}
+								break
+							}
+							case "openai-compat": {
+								const modelId = options.model || "gpt-4o"
+								const baseUrl = options.baseUrl || "https://api.openai.com/v1"
+								config = {
+									apiProvider: "openai",
+									openAiApiKey: options.apikey,
+									openAiModelId: modelId,
+									openAiBaseUrl: baseUrl,
+								}
+								break
+							}
+							case "openai": {
+								const modelId = options.model || "gpt-4o"
+								config = {
+									apiProvider: "openai-native",
+									openAiNativeApiKey: options.apikey,
+									openAiModelId: modelId,
+								}
+								break
+							}
+							case "deepseek": {
+								const modelId = options.model || "deepseek-coder"
+								const baseUrl = options.baseUrl
+								config = {
+									apiProvider: "deepseek",
+									deepSeekApiKey: options.apikey,
+									...(baseUrl && { deepSeekBaseUrl: baseUrl }),
+								}
+								break
+							}
+							case "gemini": {
+								const modelId = options.model || "gemini-1.5-pro"
+								const baseUrl = options.baseUrl
+								config = {
+									apiProvider: "gemini",
+									geminiApiKey: options.apikey,
+									...(baseUrl && { googleGeminiBaseUrl: baseUrl }),
+								}
+								break
+							}
+							case "glama": {
+								const modelId = options.model || "glama-1.5"
+								config = {
+									apiProvider: "glama",
+									glamaApiKey: options.apikey,
+									glamaModelId: modelId,
+								}
+								break
+							}
+							case "mistral": {
+								const modelId = options.model || "mistral-large-latest"
+								const baseUrl = options.baseUrl
+								config = {
+									apiProvider: "mistral",
+									mistralApiKey: options.apikey,
+									...(baseUrl && { mistralCodestralUrl: baseUrl }),
+								}
+								break
+							}
+							case "lmstudio": {
+								const modelId = options.model || "default"
+								const baseUrl = options.baseUrl
+								config = {
+									apiProvider: "lmstudio",
+									lmStudioModelId: modelId,
+									...(baseUrl && { lmStudioBaseUrl: baseUrl }),
+								}
+								break
+							}
+							case "unbound": {
+								const modelId = options.model || "unbound-default"
+								config = {
+									apiProvider: "unbound",
+									unboundApiKey: options.apikey,
+									unboundModelId: modelId,
+								}
+								break
+							}
+							case "vscode-lm": {
+								const modelId = options.model || "default"
+								config = {
+									apiProvider: "vscode-lm",
+									vsCodeLmModelSelector: {
+										id: modelId,
 									},
 								}
 								break
@@ -185,16 +357,21 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 
 					// Create the profile
 					const profileId = await wsClient.sendCommand("createProfile", options.name)
-					displayBox("Profile Created", `Profile "${options.name}" created with ID: ${profileId}`, "success")
+					console.log(
+						chalk.green(`\nProfile Created: Profile "${options.name}" created with ID: ${profileId}`),
+					)
 
 					// Set the profile as active if requested
 					if (options.active) {
 						await wsClient.sendCommand("setActiveProfile", options.name)
-						displayBox("Profile Activated", `Profile "${options.name}" is now active`, "success")
+						console.log(chalk.green(`Profile "${options.name}" is now active`))
 					}
 				} catch (error) {
 					console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
+					process.exit(1)
 				}
+				// Exit immediately after profile command
+				process.exit(0)
 			})
 	)
 }
@@ -215,6 +392,7 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 			.option("--provider <provider>", "Provider name (e.g., 'openrouter')")
 			.option("--model <model>", "Model ID (e.g., 'anthropic/claude-3.7-sonnet')")
 			.option("--apikey <apikey>", "API key for the provider")
+			.option("--base-url <url>", "Base URL for API (required for openai-native)")
 			// Permission options
 			.option("--auto-approval <boolean>", "Enable or disable auto-approval for all tools")
 			.option("--allow-read <boolean>", "Auto-approve read-only operations")
@@ -233,6 +411,7 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 						!options.json &&
 						!options.file &&
 						!options.provider &&
+						!options.baseUrl &&
 						!options.autoApproval &&
 						!options.allowRead &&
 						!options.allowWrite &&
@@ -244,7 +423,7 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 						!options.secure
 					) {
 						await wsClient.sendCommand("setActiveProfile", options.name)
-						displayBox("Profile Activated", `Profile "${options.name}" is now active`, "success")
+						console.log(chalk.green(`\nProfile Activated: Profile "${options.name}" is now active`))
 						return
 					}
 
@@ -279,7 +458,6 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 									openRouterModelId: modelId,
 									openRouterBaseUrl: "https://openrouter.ai/api/v1",
 									openRouterUseMiddleOutTransform: true,
-									modelTemperature: 0,
 									// Default model info for Claude 3.7 Sonnet
 									openRouterModelInfo: {
 										maxTokens: 8192,
@@ -291,6 +469,125 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 										outputPrice: 15.0,
 										cacheWritesPrice: 3.75,
 										cacheReadsPrice: 0.3,
+									},
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "anthropic": {
+								const modelId = options.model || "claude-3.7-sonnet"
+								const baseUrl = options.baseUrl
+								const providerConfig = {
+									apiProvider: "anthropic",
+									apiKey: options.apikey,
+									apiModelId: modelId,
+									...(baseUrl && { anthropicBaseUrl: baseUrl }),
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "openai-compat": {
+								const modelId = options.model || "gpt-4o"
+								const baseUrl = options.baseUrl || "https://api.openai.com/v1"
+								const providerConfig = {
+									apiProvider: "openai",
+									openAiApiKey: options.apikey,
+									openAiModelId: modelId,
+									openAiBaseUrl: baseUrl,
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "openai": {
+								const modelId = options.model || "gpt-4o"
+								const providerConfig = {
+									apiProvider: "openai-native",
+									openAiNativeApiKey: options.apikey,
+									openAiModelId: modelId,
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "deepseek": {
+								const modelId = options.model || "deepseek-coder"
+								const baseUrl = options.baseUrl
+								const providerConfig = {
+									apiProvider: "deepseek",
+									deepSeekApiKey: options.apikey,
+									...(baseUrl && { deepSeekBaseUrl: baseUrl }),
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "gemini": {
+								const modelId = options.model || "gemini-1.5-pro"
+								const baseUrl = options.baseUrl
+								const providerConfig = {
+									apiProvider: "gemini",
+									geminiApiKey: options.apikey,
+									...(baseUrl && { googleGeminiBaseUrl: baseUrl }),
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "glama": {
+								const modelId = options.model || "glama-1.5"
+								const providerConfig = {
+									apiProvider: "glama",
+									glamaApiKey: options.apikey,
+									glamaModelId: modelId,
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "mistral": {
+								const modelId = options.model || "mistral-large-latest"
+								const baseUrl = options.baseUrl
+								const providerConfig = {
+									apiProvider: "mistral",
+									mistralApiKey: options.apikey,
+									...(baseUrl && { mistralCodestralUrl: baseUrl }),
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "lmstudio": {
+								const modelId = options.model || "default"
+								const baseUrl = options.baseUrl
+								const providerConfig = {
+									apiProvider: "lmstudio",
+									lmStudioModelId: modelId,
+									...(baseUrl && { lmStudioBaseUrl: baseUrl }),
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "unbound": {
+								const modelId = options.model || "unbound-default"
+								const providerConfig = {
+									apiProvider: "unbound",
+									unboundApiKey: options.apikey,
+									unboundModelId: modelId,
+								}
+								config = { ...config, ...providerConfig }
+								hasConfigChanges = true
+								break
+							}
+							case "vscode-lm": {
+								const modelId = options.model || "default"
+								const providerConfig = {
+									apiProvider: "vscode-lm",
+									vsCodeLmModelSelector: {
+										id: modelId,
 									},
 								}
 								config = { ...config, ...providerConfig }
@@ -376,36 +673,39 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 						await wsClient.sendCommand("updateConfiguration", { name: options.name, config })
 
 						if (hasConfigChanges && hasPermissionChanges) {
-							displayBox(
-								"Profile Updated",
-								`Profile "${options.name}" has been updated with new configuration and permissions`,
-								"success",
+							console.log(
+								chalk.green(
+									`\nProfile Updated: Profile "${options.name}" has been updated with new configuration and permissions`,
+								),
 							)
 						} else if (hasConfigChanges) {
-							displayBox(
-								"Profile Updated",
-								`Profile "${options.name}" has been updated with new configuration`,
-								"success",
+							console.log(
+								chalk.green(
+									`\nProfile Updated: Profile "${options.name}" has been updated with new configuration`,
+								),
 							)
 						} else {
-							displayBox(
-								"Profile Updated",
-								`Profile "${options.name}" has been updated with new permissions`,
-								"success",
+							console.log(
+								chalk.green(
+									`\nProfile Updated: Profile "${options.name}" has been updated with new permissions`,
+								),
 							)
 						}
 					} else if (!options.active) {
-						displayBox("No Changes", `No changes were made to profile "${options.name}"`, "info")
+						console.log(chalk.blue(`\nNo Changes: No changes were made to profile "${options.name}"`))
 					}
 
 					// Set the profile as active if requested
 					if (options.active) {
 						await wsClient.sendCommand("setActiveProfile", options.name)
-						displayBox("Profile Activated", `Profile "${options.name}" is now active`, "success")
+						console.log(chalk.green(`\nProfile Activated: Profile "${options.name}" is now active`))
 					}
 				} catch (error) {
 					console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
+					process.exit(1)
 				}
+				// Exit immediately after profile command
+				process.exit(0)
 			})
 	)
 }
@@ -436,12 +736,15 @@ export function deleteProfileCommand(wsClient: WebSocketClient): Command {
 
 				if (shouldDelete) {
 					await wsClient.sendCommand("deleteProfile", { name: options.name })
-					displayBox("Profile Deleted", `Profile "${options.name}" has been deleted`, "success")
+					console.log(chalk.green(`\nProfile Deleted: Profile "${options.name}" has been deleted`))
 				} else {
 					console.log(chalk.yellow("Profile deletion cancelled"))
 				}
 			} catch (error) {
 				console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
+				process.exit(1)
 			}
+			// Exit immediately after profile command
+			process.exit(0)
 		})
 }
