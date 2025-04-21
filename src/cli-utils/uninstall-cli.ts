@@ -48,9 +48,9 @@ export async function uninstallCLI(
 				if (userPath.includes(binDir)) {
 					outputChannel.appendLine("CLI is in PATH. Recommend manual removal with: ")
 					outputChannel.appendLine(`setx PATH "%PATH:${binDir};=%"`)
-					vscode.window.showInformationMessage(
-						`RooCode CLI has been uninstalled, but you may need to manually remove it from your PATH: ${binDir}`,
-					)
+					// vscode.window.showInformationMessage(
+					// 	`RooCode CLI has been uninstalled, but you may need to manually remove it from your PATH: ${binDir}`,
+					// )
 				}
 			} catch (error) {
 				outputChannel.appendLine(
@@ -137,7 +137,7 @@ export async function uninstallCLI(
 		context.globalState.update("cliInstalled", false)
 
 		// Show success message to the user
-		vscode.window.showInformationMessage("RooCode CLI uninstalled successfully.")
+		// vscode.window.showInformationMessage("RooCode CLI uninstalled successfully.")
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error)
 		outputChannel.appendLine(`Error uninstalling roocli: ${errorMessage}`)

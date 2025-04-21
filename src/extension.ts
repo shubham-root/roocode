@@ -288,7 +288,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				outputChannel.appendLine(`WebSocket configuration written to: ${getWebSocketConfigPath()}`)
 
 				// Show information message to the user
-				vscode.window.showInformationMessage(`RooCode CLI communication server started on port ${actualPort}`)
+				// vscode.window.showInformationMessage(`RooCode CLI communication server started on port ${actualPort}`)
 			} catch (error) {
 				outputChannel.appendLine(
 					`Error writing WebSocket configuration: ${error instanceof Error ? error.message : String(error)}`,

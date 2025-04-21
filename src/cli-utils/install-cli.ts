@@ -173,9 +173,9 @@ export async function installCLI(context: vscode.ExtensionContext, outputChannel
 		context.globalState.update("cliInstalled", true)
 
 		// Show success message to the user
-		vscode.window.showInformationMessage(
-			'RooCode CLI installed successfully. You can now use the "roo" command in your terminal.',
-		)
+		// vscode.window.showInformationMessage(
+		// 	'RooCode CLI installed successfully. You can now use the "roo" command in your terminal.',
+		// )
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error)
 		outputChannel.appendLine(`Error installing roocli: ${errorMessage}`)
