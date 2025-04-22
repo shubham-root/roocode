@@ -1,37 +1,39 @@
 import { useAppTranslation } from "@/i18n/TranslationContext"
-import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
-import debounce from "debounce"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Trans } from "react-i18next"
-import { useDeepCompareEffect, useEvent, useMount } from "react-use"
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
-import removeMd from "remove-markdown"
-import styled from "styled-components"
-import { findLast } from "../../../../src/shared/array"
-import { combineApiRequests } from "../../../../src/shared/combineApiRequests"
-import { combineCommandSequences } from "../../../../src/shared/combineCommandSequences"
+import { findLast } from "@roo/shared/array"
+import { combineApiRequests } from "@roo/shared/combineApiRequests"
+import { combineCommandSequences } from "@roo/shared/combineCommandSequences"
 import {
 	ClineAsk,
 	ClineMessage,
 	ClineSayBrowserAction,
 	ClineSayTool,
 	ExtensionMessage,
-} from "../../../../src/shared/ExtensionMessage"
-import { getApiMetrics } from "../../../../src/shared/getApiMetrics"
-import { McpServer, McpTool } from "../../../../src/shared/mcp"
-import { getAllModes } from "../../../../src/shared/modes"
-import { AudioType } from "../../../../src/shared/WebviewMessage"
-import { useExtensionState } from "../../context/ExtensionStateContext"
-import { validateCommand } from "../../utils/command-validation"
-import { vscode } from "../../utils/vscode"
+} from "@roo/shared/ExtensionMessage"
+import { getApiMetrics } from "@roo/shared/getApiMetrics"
+import { McpServer, McpTool } from "@roo/shared/mcp"
+import { getAllModes } from "@roo/shared/modes"
+import { AudioType } from "@roo/shared/WebviewMessage"
+import { useExtensionState } from "@src/context/ExtensionStateContext"
+import { validateCommand } from "@src/utils/command-validation"
+import { vscode } from "@src/utils/vscode"
+import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
+import debounce from "debounce"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { Trans } from "react-i18next"
+import { useDeepCompareEffect, useEvent, useMount } from "react-use"
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
+import removeMd from "remove-markdown"
+import styled from "styled-components"
 import TelemetryBanner from "../common/TelemetryBanner"
 import HistoryPreview from "../history/HistoryPreview"
 import { normalizeApiConfiguration } from "../settings/ApiOptions"
+import RooHero from "../welcome/RooHero"
 import Announcement from "./Announcement"
 import AutoApproveMenu from "./AutoApproveMenu"
 import BrowserSessionRow from "./BrowserSessionRow"
 import ChatRow from "./ChatRow"
 import ChatTextArea from "./ChatTextArea"
+import SystemPromptWarning from "./SystemPromptWarning"
 import TaskHeader from "./TaskHeader"
 interface ChatViewProps {
 	isHidden: boolean
@@ -40,11 +42,18 @@ interface ChatViewProps {
 	showHistoryView: () => void
 }
 
+export interface ChatViewRef {
+	acceptInput: () => void
+}
+
 export const MAX_IMAGES_PER_MESSAGE = 20 // Anthropic limits to 20 images
 
 const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
 
-const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryView }: ChatViewProps) => {
+const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewProps> = (
+	{ isHidden, showAnnouncement, hideAnnouncement, showHistoryView },
+	ref,
+) => {
 	const { t } = useAppTranslation()
 	const modeShortcutText = `${isMac ? "⌘" : "Ctrl"} + . ${t("chat:forNextMode")}`
 	const {
@@ -69,7 +78,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		alwaysAllowSubtasks,
 		customModes,
 		telemetrySetting,
-		showGreeting,
+		hasSystemPromptOverride,
 	} = useExtensionState()
 
 	//const task = messages.length > 0 ? (messages[0].say === "task" ? messages[0] : undefined) : undefined) : undefined
@@ -160,6 +169,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 								case "editedExistingFile":
 								case "appliedDiff":
 								case "newFileCreated":
+								case "insertContent":
 									setPrimaryButtonText(t("chat:save.title"))
 									setSecondaryButtonText(t("chat:reject.title"))
 									break
@@ -627,7 +637,13 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 				return true
 			}
 			const tool = JSON.parse(message.text)
-			return ["editedExistingFile", "appliedDiff", "newFileCreated"].includes(tool.tool)
+			return [
+				"editedExistingFile",
+				"appliedDiff",
+				"newFileCreated",
+				"searchAndReplace",
+				"insertContent",
+			].includes(tool.tool)
 		}
 		return false
 	}, [])
@@ -1169,6 +1185,16 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		}
 	}, [handleKeyDown])
 
+	useImperativeHandle(ref, () => ({
+		acceptInput: () => {
+			if (enableButtons && primaryButtonText) {
+				handlePrimaryButtonClick(inputValue, selectedImages)
+			} else if (!textAreaDisabled && (inputValue.trim() || selectedImages.length > 0)) {
+				handleSendMessage(inputValue, selectedImages)
+			}
+		},
+	}))
+
 	return (
 		<div
 			style={{
@@ -1195,6 +1221,13 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 						onClose={handleTaskCloseButtonClick}
 					/>
 
+					{/* System prompt override warning */}
+					{hasSystemPromptOverride && (
+						<div className="px-3">
+							<SystemPromptWarning />
+						</div>
+					)}
+
 					{/* Checkpoint warning message */}
 					{showCheckpointWarning && (
 						<div className="px-3">
@@ -1214,12 +1247,8 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 					}}>
 					{telemetrySetting === "unset" && <TelemetryBanner />}
 					{showAnnouncement && <Announcement version={version} hideAnnouncement={hideAnnouncement} />}
-					{showGreeting === true && (
-						<div style={{ padding: "0 20px", flexShrink: 0 }}>
-							<h2>{t("chat:greeting")}</h2>
-							<p>{t("chat:aboutMe")}</p>
-						</div>
-					)}
+
+					<RooHero />
 					{taskHistory.length > 0 && <HistoryPreview showHistoryView={showHistoryView} />}
 				</div>
 			)}
@@ -1392,6 +1421,8 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		</div>
 	)
 }
+
+const ChatView = forwardRef(ChatViewComponent)
 
 const ScrollToBottomButton = styled.div`
 	background-color: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 55%, transparent);

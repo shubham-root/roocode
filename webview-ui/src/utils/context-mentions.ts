@@ -1,6 +1,6 @@
-import { mentionRegex } from "../../../src/shared/context-mentions"
+import { mentionRegex } from "@roo/shared/context-mentions"
 import { Fzf } from "fzf"
-import { ModeConfig } from "../../../src/shared/modes"
+import { ModeConfig } from "@roo/shared/modes"
 import * as path from "path"
 
 export interface SearchResult {
@@ -84,13 +84,14 @@ export interface ContextMenuQueryItem {
 
 export function getContextMenuOptions(
 	query: string,
+	inputValue: string,
 	selectedType: ContextMenuOptionType | null = null,
 	queryItems: ContextMenuQueryItem[],
 	dynamicSearchResults: SearchResult[] = [],
 	modes?: ModeConfig[],
 ): ContextMenuQueryItem[] {
 	// Handle slash commands for modes
-	if (query.startsWith("/")) {
+	if (query.startsWith("/") && inputValue.startsWith("/")) {
 		const modeQuery = query.slice(1)
 		if (!modes?.length) return [{ type: ContextMenuOptionType.NoResults }]
 

@@ -64,7 +64,6 @@ export interface WebviewMessage {
 		| "soundVolume"
 		| "diffEnabled"
 		| "enableCheckpoints"
-		| "checkpointStorage"
 		| "browserViewportSize"
 		| "screenshotQuality"
 		| "remoteBrowserHost"
@@ -126,7 +125,6 @@ export interface WebviewMessage {
 		| "maxReadFileLine"
 		| "searchFiles"
 		| "toggleApiConfigPin"
-		| "showGreeting"
 	text?: string
 	disabled?: boolean
 	askResponse?: ClineAskResponse
@@ -152,6 +150,7 @@ export interface WebviewMessage {
 	source?: "global" | "project"
 	requestId?: string
 	ids?: string[]
+	hasSystemPromptOverride?: boolean
 }
 
 export const checkoutDiffPayloadSchema = z.object({
