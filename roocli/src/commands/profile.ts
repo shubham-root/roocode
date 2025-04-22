@@ -157,6 +157,11 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 			.option("--allow-mcp <boolean>", "Auto-approve MCP operations", "true")
 			.option("--allow-mode-switch <boolean>", "Auto-approve mode switch operations", "true")
 			.option("--allow-subtasks <boolean>", "Auto-approve subtask operations", "true")
+			.option(
+				"--allowed-commands <commands>",
+				"Comma-separated list of allowed commands (default: '*' for all commands)",
+				"*",
+			)
 			.option("--secure", "Disable all auto-approvals (secure mode)")
 			.action(async (options) => {
 				try {
@@ -330,6 +335,7 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 						config.alwaysAllowMcp = false
 						config.alwaysAllowModeSwitch = false
 						config.alwaysAllowSubtasks = false
+						config.allowedCommands = [] // No commands allowed in secure mode
 					} else {
 						// Set auto-approval if specified
 						if (options.autoApproval !== undefined) {
@@ -350,6 +356,21 @@ export function createProfileCommand(wsClient: WebSocketClient): Command {
 							options.allowModeSwitch !== undefined ? parseBool(options.allowModeSwitch) : true
 						config.alwaysAllowSubtasks =
 							options.allowSubtasks !== undefined ? parseBool(options.allowSubtasks) : true
+
+						// Set allowed commands
+						if (options.allowedCommands !== undefined) {
+							if (options.allowedCommands === "*") {
+								// Special case: wildcard (all commands allowed)
+								config.allowedCommands = ["*"]
+							} else {
+								// Parse the comma-separated list of commands
+								const commands = options.allowedCommands.split(",").map((cmd: string) => cmd.trim())
+								config.allowedCommands = commands
+							}
+						} else {
+							// Default to wildcard (all commands allowed)
+							config.allowedCommands = ["*"]
+						}
 					}
 
 					// Set the configuration
@@ -402,6 +423,11 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 			.option("--allow-mcp <boolean>", "Auto-approve MCP operations")
 			.option("--allow-mode-switch <boolean>", "Auto-approve mode switch operations")
 			.option("--allow-subtasks <boolean>", "Auto-approve subtask operations")
+			.option(
+				"--allowed-commands <commands>",
+				"Comma-separated list of allowed commands (default: '*' for all commands)",
+				"*",
+			)
 			.option("--secure", "Disable all auto-approvals (secure mode)")
 			.action(async (options) => {
 				try {
@@ -619,6 +645,7 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 						config.alwaysAllowMcp = false
 						config.alwaysAllowModeSwitch = false
 						config.alwaysAllowSubtasks = false
+						config.allowedCommands = [] // No commands allowed in secure mode
 						hasPermissionChanges = true
 					} else {
 						// Set auto-approval if specified
@@ -640,6 +667,19 @@ export function updateProfileCommand(wsClient: WebSocketClient): Command {
 
 						if (options.allowExecute !== undefined) {
 							config.alwaysAllowExecute = parseBool(options.allowExecute)
+							hasPermissionChanges = true
+						}
+
+						// Set allowed commands if specified
+						if (options.allowedCommands !== undefined) {
+							if (options.allowedCommands === "*") {
+								// Special case: wildcard (all commands allowed)
+								config.allowedCommands = ["*"]
+							} else {
+								// Parse the comma-separated list of commands
+								const commands = options.allowedCommands.split(",").map((cmd: string) => cmd.trim())
+								config.allowedCommands = commands
+							}
 							hasPermissionChanges = true
 						}
 
