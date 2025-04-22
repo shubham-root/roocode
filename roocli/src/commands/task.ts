@@ -474,16 +474,27 @@ export async function setupTaskEventListeners(wsClient: WebSocketClient, taskId:
 									}
 									console.log(chalk.blue("\nTool Approval Request:"), question)
 									console.log(chalk.blue("\nOptions:"))
-									console.log(`${chalk.green("1.")} Approve`)
+
+									// Check if it's a file operation tool to use "Save" instead of "Approve"
+									const isFileOperation = [
+										"editedExistingFile",
+										"appliedDiff",
+										"newFileCreated",
+									].includes(toolName)
+									const primaryButtonText = isFileOperation ? "Save" : "Approve"
+
+									console.log(`${chalk.green("1.")} ${primaryButtonText}`)
 									console.log(`${chalk.red("2.")} Reject`)
 
 									console.log(
-										chalk.yellow("\nUse 'roocli update task --interact primary' to approve"),
+										chalk.yellow(
+											`\nUse 'roocli update task --interact primary' to ${primaryButtonText.toLowerCase()}`,
+										),
 									)
 									console.log(chalk.yellow("Use 'roocli update task --interact secondary' to reject"))
 									console.log(
 										chalk.yellow(
-											"Or use 'roocli update task --message \"approve\"' or 'roocli update task --message \"reject\"' to respond",
+											`Or use 'roocli update task --message "${primaryButtonText.toLowerCase()}"' or 'roocli update task --message "reject"' to respond`,
 										),
 									)
 
@@ -588,18 +599,146 @@ export async function waitForTaskCompletion(
 				// Get the messages for this task
 				const messages = await wsClient.sendCommand("getTaskMessages", { taskId })
 
+				// Get the current profile settings for auto-approval
+				const profileSettings = await wsClient.sendCommand("getConfiguration")
+				const autoApprovalEnabled = profileSettings?.autoApprovalEnabled === true
+				const alwaysAllowExecute = profileSettings?.alwaysAllowExecute === true
+				const alwaysAllowBrowser = profileSettings?.alwaysAllowBrowser === true
+				const alwaysAllowMcp = profileSettings?.alwaysAllowMcp === true
+
 				if (Array.isArray(messages) && messages.length > 0) {
 					const lastMessage = messages[messages.length - 1]
 
 					// Check if the last message is an ask type or attempt_completion
 					if (lastMessage && lastMessage.type === "ask") {
-						if (lastMessage.ask === "followup" || lastMessage.ask === "completion_result") {
+						// List of all ask types that should trigger auto-exit
+						// These correspond to cases where setEnableButtons(true) is called in the webview
+						const autoExitAskTypes = [
+							"followup",
+							"completion_result",
+							"api_req_failed",
+							"mistake_limit_reached",
+							"tool",
+							"browser_action_launch",
+							"command",
+							"command_output",
+							"use_mcp_server",
+							"resume_task",
+							"resume_completed_task",
+						]
+
+						// Check if we should auto-approve based on profile settings
+						if (
+							lastMessage.ask === "command_output" ||
+							lastMessage.ask === "api_req_failed" ||
+							(lastMessage.ask === "tool" && autoApprovalEnabled) ||
+							(lastMessage.ask === "resume_task" && autoApprovalEnabled) ||
+							(lastMessage.ask === "command" && alwaysAllowExecute) ||
+							(lastMessage.ask === "browser_action_launch" && alwaysAllowBrowser) ||
+							(lastMessage.ask === "use_mcp_server" && alwaysAllowMcp)
+						) {
+							// Auto-approve by sending a "yesButtonClicked" response
+							await wsClient.sendCommand("askResponse", {
+								askResponse: "yesButtonClicked",
+							})
+
+							console.log(
+								chalk.green(`\nAuto-approved ${lastMessage.ask} based on your permission settings.`),
+							)
+
+							// Wait a moment for the response to be processed
+							await wait(500)
+
+							// Get the messages again to check if there's a new message
+							const updatedMessages = await wsClient.sendCommand("getTaskMessages", { taskId })
+							if (Array.isArray(updatedMessages) && updatedMessages.length > messages.length) {
+								// There's a new message, so we don't need to exit yet
+								return false
+							}
+						}
+
+						if (autoExitAskTypes.includes(lastMessage.ask)) {
 							shouldAutoExit = true
 							clearTimeout(timeoutId)
 							clearInterval(activityCheckId)
 							wsClient.removeListener("taskFinished", finishListener)
 							wsClient.removeTaskEventListeners()
-							console.log(chalk.green("\nTask completed. Exiting automatically."))
+
+							// Display a specific message based on the ask type
+							switch (lastMessage.ask) {
+								case "followup":
+									console.log(chalk.green("\nQuestion received. Exiting automatically."))
+									break
+								case "completion_result":
+									console.log(
+										chalk.green("\nTask completed. Use 'roocli create task' to start a new task."),
+									)
+									break
+								case "api_req_failed":
+									console.log(
+										chalk.green(
+											"\nAPI request failed. Use 'roocli update task --interact primary' to retry or 'roocli create task' to start a new task.",
+										),
+									)
+									break
+								case "mistake_limit_reached":
+									console.log(
+										chalk.green(
+											"\nMistake limit reached. Use 'roocli update task --interact primary' to proceed anyway or 'roocli create task' to start a new task.",
+										),
+									)
+									break
+								case "tool":
+									console.log(
+										chalk.green(
+											"\nTool approval required. Use 'roocli update task --interact primary' to approve or 'roocli update task --interact secondary' to reject.",
+										),
+									)
+									break
+								case "browser_action_launch":
+									console.log(
+										chalk.green(
+											"\nBrowser action approval required. Use 'roocli update task --interact primary' to approve or 'roocli update task --interact secondary' to reject.",
+										),
+									)
+									break
+								case "command":
+									console.log(
+										chalk.green(
+											"\nCommand approval required. Use 'roocli update task --interact primary' to run command or 'roocli update task --interact secondary' to reject.",
+										),
+									)
+									break
+								case "command_output":
+									console.log(
+										chalk.green(
+											"\nCommand output received. Use 'roocli update task --interact primary' to proceed while running.",
+										),
+									)
+									break
+								case "use_mcp_server":
+									console.log(
+										chalk.green(
+											"\nMCP server approval required. Use 'roocli update task --interact primary' to approve or 'roocli update task --interact secondary' to reject.",
+										),
+									)
+									break
+								case "resume_task":
+									console.log(
+										chalk.green(
+											"\nTask paused. Use 'roocli update task --interact primary' to resume task or 'roocli update task --interact secondary' to terminate.",
+										),
+									)
+									break
+								case "resume_completed_task":
+									console.log(
+										chalk.green("\nTask completed. Use 'roocli create task' to start a new task."),
+									)
+									break
+								default:
+									console.log(chalk.green("\nTask completed. Exiting automatically."))
+							}
+
 							resolve()
 							return true
 						}
