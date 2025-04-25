@@ -20,7 +20,7 @@ program.option("--debug", "Enable debug mode")
 
 // Handle errors
 program.exitOverride((err) => {
-	if (err.code === "commander.help") {
+	if (err.code === "commander.help" || err.code === "commander.version") {
 		process.exit(0)
 	}
 
