@@ -48,6 +48,7 @@ export class WebSocketClient extends EventEmitter {
 	private connectionTimeoutId: NodeJS.Timeout | null = null
 	private debugMode: boolean = false
 	private lastActivityTime: number = Date.now()
+	private lastCompleteMessage: { taskId: string; message: any } | null = null
 
 	constructor(url: string, token: string | null = null, debug: boolean = false) {
 		super()
@@ -397,6 +398,23 @@ export class WebSocketClient extends EventEmitter {
 				// This is a complete message, clear any partial state
 				this.partialMessages.delete(taskId)
 
+				// Store the complete message with its metadata
+				if (message && type) {
+					this.lastCompleteMessage = {
+						taskId,
+						message: {
+							type,
+							text,
+							ask: ask || null,
+							say: say || null,
+						},
+					}
+
+					if (this.debugMode) {
+						console.log(chalk.green(`Stored last complete message for task ${taskId}`))
+					}
+				}
+
 				// Emit a special event for complete messages
 				this.emit("completeMessage", {
 					taskId,
@@ -492,5 +510,17 @@ export class WebSocketClient extends EventEmitter {
 	 */
 	public isDebugMode(): boolean {
 		return this.debugMode
+	}
+
+	/**
+	 * Get the last complete message for a task without making a websocket call
+	 * @param taskId The ID of the task to get the last message for
+	 * @returns The last complete message or null if none exists
+	 */
+	public getLastMessage(taskId: string): any {
+		if (this.lastCompleteMessage && this.lastCompleteMessage.taskId === taskId) {
+			return this.lastCompleteMessage.message
+		}
+		return null
 	}
 }
